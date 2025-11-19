@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-World Pathfinding Simulator</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Google Fonts - Inter for a clean English UI */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #e5e7eb;
+        }
+
+        #map {
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+        }
+
+        .custom-marker-icon {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+            transition: transform 0.2s;
+        }
+        .custom-marker-icon:hover {
+            transform: scale(1.1) translateY(-2px);
+        }
+
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Improve select input appearance */
+        select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+            padding-left: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <!-- Control Panel -->
+    <div class="fixed top-5 left-5 w-80 z-[1000] glass-panel p-5 transition-all duration-300 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center gap-3 mb-5 pb-4 border-b border-gray-200">
+            <div class="bg-indigo-600 text-white p-2.5 rounded-xl shadow-lg shadow-indigo-200">
+                <i class="fa-solid fa-network-wired text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-extrabold text-gray-800 leading-tight">Pathfinding Sim</h1>
+                <p class="text-xs text-gray-500">Real-world OSM data</p>
+            </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="space-y-3 mb-4">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Algorithm</label>
+                <select id="algorithm-select" class="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none">
+                    <option value="astar">A* Search (Smart)</option>
+                    <option value="dijkstra">Dijkstra (Reliable)</option>
+                    <option value="bfs">Breadth-First Search (BFS)</option>
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Simulation Speed</label>
+                <select id="speed-select" class="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none">
+                    <option value="max">🚀 Max (Instant)</option>
+                    <option value="1" selected>⚡ 1x (Normal)</option>
+                    <option value="0.5">🐢 0.5x (Slow)</option>
+                    <option value="0.25">🐌 0.25x (Very Slow)</option>
+                    <option value="0.1">🔍 0.1x (Step by Step)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="grid grid-cols-2 gap-2 mb-4">
+            <button onclick="startSearch()" id="start-btn" class="text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-lg text-sm px-4 py-2.5 text-center inline-flex items-center justify-center gap-2 transition shadow-md active:scale-95">
+                <i class="fa-solid fa-play"></i> Start
+            </button>
+            <button onclick="clearMap()" class="text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-lg text-sm px-4 py-2.5 text-center inline-flex items-center justify-center gap-2 transition active:scale-95">
+                <i class="fa-solid fa-eraser"></i> Clear
+            </button>
+        </div>
+
+        <!-- Status -->
+        <div id="status-container" class="hidden bg-blue-50 p-3 rounded-lg border border-blue-100 mb-4">
+            <div class="flex items-center gap-2 text-blue-700 text-sm font-bold">
+                <div class="loader" id="loading-spinner"></div>
+                <span id="status-text">Processing...</span>
+            </div>
+        </div>
+
+        <!-- Stats Panel -->
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                <span class="text-xs font-bold text-gray-500 uppercase">Live Stats (Processing Time)</span>
+                <span id="timer-display" class="font-mono text-indigo-600 font-bold text-sm">00:00.00</span>
+            </div>
+            <div class="p-4 grid grid-cols-2 gap-4 text-center">
+                <div>
+                    <div class="text-xs text-gray-400 mb-1">Explored (Yellow)</div>
+                    <div id="nodes-visited" class="text-lg font-bold text-gray-800">0</div>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-400 mb-1">Path Nodes (Blue)</div>
+                    <div id="path-nodes-count" class="text-lg font-bold text-gray-800">0</div>
+                </div>
+                <div class="col-span-2 border-t border-gray-100 pt-2 mt-1">
+                    <div class="text-xs text-gray-400 mb-1">Total Distance</div>
+                    <div id="path-length" class="text-xl font-black text-indigo-600">0.00 km</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Credits Footer -->
+        <div class="mt-5 pt-4 border-t border-gray-200 text-center">
+            <div class="text-[10px] text-gray-400 mb-1">Map data © OpenStreetMap contributors</div>
+            <div class="text-xs font-semibold text-gray-600">
+                Developed by <span class="text-indigo-600">idriss boukmouche</span>
+            </div>
+            <a href="https://github.com/terminaldz" target="_blank" class="text-xs text-gray-500 hover:text-indigo-500 transition flex items-center justify-center gap-1 mt-1">
+                <i class="fa-brands fa-github"></i> terminaldz
+            </a>
+        </div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // --- Map Setup ---
+        const map = L.map('map', { zoomControl: false }).setView([24.7136, 46.6753], 15); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '', maxZoom: 19
+        }).addTo(map);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // --- Icons ---
+        const startIcon = L.divIcon({
+            className: 'custom-marker-icon',
+            html: '<i class="fa-solid fa-location-dot text-green-600 text-4xl"></i>',
+            iconSize: [32, 32], iconAnchor: [16, 32]
+        });
+        const endIcon = L.divIcon({
+            className: 'custom-marker-icon',
+            html: '<i class="fa-solid fa-flag-checkered text-red-600 text-3xl"></i>',
+            iconSize: [32, 32], iconAnchor: [10, 30]
+        });
+
+        let startMarker = L.marker([24.7136, 46.6753], { draggable: true, icon: startIcon }).addTo(map);
+        let endMarker = L.marker([24.7190, 46.6820], { draggable: true, icon: endIcon }).addTo(map);
+
+        let searchLayer = L.layerGroup().addTo(map);
+        let pathLayer = L.layerGroup().addTo(map);
+        let graph = {};
+        let isProcessing = false;
+        
+        // --- Timer Variables ---
+        let startTime = 0;
+        let totalPauseTime = 0;
+        let isPaused = false;
+        let pauseStartTime = 0;
+
+        // --- Speed Settings ---
+        const SPEED_SETTINGS = {
+            'max':  { batch: 100, delay: 0 },
+            '1':    { batch: 20,  delay: 10 },
+            '0.5':  { batch: 10,  delay: 30 },
+            '0.25': { batch: 5,   delay: 80 },
+            '0.1':  { batch: 1,   delay: 200 }
+        };
+
+        class PriorityQueue {
+            constructor() { this.values = []; }
+            enqueue(val, priority) {
+                this.values.push({ val, priority });
+                this.sort();
+            }
+            dequeue() { return this.values.shift(); }
+            sort() { this.values.sort((a, b) => a.priority - b.priority); }
+            isEmpty() { return this.values.length === 0; }
+        }
+
+        // --- Logic ---
+
+        async function startSearch() {
+            if (isProcessing) return;
+            clearMap(true);
+            
+            const algo = document.getElementById('algorithm-select').value;
+            const startPos = startMarker.getLatLng();
+            const endPos = endMarker.getLatLng();
+
+            setLoading(true, "Fetching map data...");
+            isProcessing = true;
+
+            try {
+                // Fetch data with padding
+                const bounds = L.latLngBounds([startPos, endPos]).pad(0.3); 
+                const roadData = await fetchOSMData(bounds);
+                
+                if (!roadData) throw new Error("Connection failed");
+
+                setLoading(true, "Building graph...");
+                buildGraph(roadData);
+
+                const startNodeId = findNearestNode(startPos);
+                const endNodeId = findNearestNode(endPos);
+
+                if (!startNodeId || !endNodeId) throw new Error("Points are too far from known roads");
+
+                setLoading(true, "Searching...");
+                document.getElementById('loading-spinner').style.display = 'none'; 
+                
+                // Reset Timer
+                startTime = performance.now();
+                totalPauseTime = 0;
+                isPaused = false;
+                updateTimerLoop();
+
+                let success = false;
+                if (algo === 'bfs') success = await runBFS(startNodeId, endNodeId);
+                else if (algo === 'dijkstra') success = await runDijkstra(startNodeId, endNodeId);
+                else if (algo === 'astar') success = await runAStar(startNodeId, endNodeId);
+
+                if (!success) alert("No path found!");
+
+            } catch (error) {
+                console.error(error);
+                alert("Error: " + error.message);
+            } finally {
+                setLoading(false);
+                isProcessing = false;
+            }
+        }
+
+        // API
+        async function fetchOSMData(bounds) {
+            const s = bounds.getSouth(), w = bounds.getWest(), n = bounds.getNorth(), e = bounds.getEast();
+            const query = `
+                [out:json][timeout:25];
+                (
+                  way["highway"]
+                     ["highway"!~"footway|cycleway|path|service|track|steps|pedestrian"]
+                     (${s},${w},${n},${e});
+                );
+                (._;>;);
+                out body;
+            `;
+            try {
+                const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
+                return await res.json();
+            } catch (err) { throw new Error("Network error"); }
+        }
+
+        function buildGraph(data) {
+            graph = {}; 
+            const nodes = {};
+            data.elements.forEach(el => { if (el.type === 'node') nodes[el.id] = { lat: el.lat, lng: el.lon }; });
+            data.elements.forEach(el => {
+                if (el.type === 'way' && el.nodes) {
+                    for (let i = 0; i < el.nodes.length - 1; i++) {
+                        const u = el.nodes[i], v = el.nodes[i+1];
+                        if (nodes[u] && nodes[v]) {
+                            const dist = getDistance(nodes[u], nodes[v]);
+                            addEdge(u, v, dist); addEdge(v, u, dist);
+                        }
+                    }
+                }
+            });
+            for (let id in graph) { graph[id].lat = nodes[id].lat; graph[id].lng = nodes[id].lng; }
+        }
+
+        function addEdge(u, v, weight) {
+            if (!graph[u]) graph[u] = { neighbors: [] };
+            graph[u].neighbors.push({ node: v, weight: weight });
+        }
+
+        function findNearestNode(latlng) {
+            let nearestId = null, minDst = Infinity;
+            for (let id in graph) {
+                const dist = getDistance({lat: latlng.lat, lng: latlng.lng}, graph[id]);
+                if (dist < minDst) { minDst = dist; nearestId = id; }
+            }
+            return nearestId;
+        }
+
+        // --- Algorithms with Visual Delay ---
+
+        async function visualDelay(ms) {
+            if (ms <= 0) return;
+            
+            isPaused = true;
+            pauseStartTime = performance.now();
+            
+            await new Promise(r => setTimeout(r, ms));
+            
+            totalPauseTime += (performance.now() - pauseStartTime);
+            isPaused = false;
+        }
+        
+        function getSpeedConfig() {
+            const val = document.getElementById('speed-select').value;
+            return SPEED_SETTINGS[val] || SPEED_SETTINGS['1'];
+        }
+
+        function updateTimer() {
+            const now = performance.now();
+            
+            let currentPauseDuration = 0;
+            if (isPaused) {
+                currentPauseDuration = now - pauseStartTime;
+            }
+
+            let diff = (now - startTime) - (totalPauseTime + currentPauseDuration);
+            
+            if (diff < 0) diff = 0;
+
+            const seconds = Math.floor(diff / 1000);
+            const ms = Math.floor((diff % 1000) / 10);
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            document.getElementById('timer-display').innerText = 
+                `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+        }
+
+        let timerInterval;
+        function updateTimerLoop() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if(isProcessing) updateTimer();
+            }, 30);
+        }
+
+        async function runBFS(start, end) {
+            let queue = [start];
+            let visited = new Set([start]);
+            let cameFrom = {};
+            let count = 0;
+            
+            while (queue.length > 0) {
+                const config = getSpeedConfig(); 
+                
+                let current = queue.shift();
+                if (current == end) {
+                    await reconstructPath(cameFrom, end);
+                    clearInterval(timerInterval);
+                    return true;
+                }
+
+                if (current !== start) {
+                    drawSearchNode(current);
+                    count++;
+                    document.getElementById('nodes-visited').innerText = count;
+                    if (count % config.batch === 0 && config.delay > 0) await visualDelay(config.delay);
+                }
+
+                if (graph[current]) {
+                    for (let neighbor of graph[current].neighbors) {
+                        if (!visited.has(neighbor.node)) {
+                            visited.add(neighbor.node);
+                            cameFrom[neighbor.node] = current;
+                            queue.push(neighbor.node);
+                        }
+                    }
+                }
+            }
+            clearInterval(timerInterval);
+            return false;
+        }
+
+        async function runDijkstra(start, end) {
+            let pq = new PriorityQueue();
+            let distances = {};
+            let cameFrom = {};
+            let visited = new Set();
+            
+            for(let node in graph) distances[node] = Infinity;
+            distances[start] = 0;
+            pq.enqueue(start, 0);
+            let count = 0;
+
+            while (!pq.isEmpty()) {
+                const config = getSpeedConfig();
+
+                let currentObj = pq.dequeue();
+                let current = currentObj.val;
+
+                if (current == end) {
+                    await reconstructPath(cameFrom, end);
+                    clearInterval(timerInterval);
+                    return true;
+                }
+
+                if (current !== start && !visited.has(current)) {
+                    visited.add(current);
+                    drawSearchNode(current);
+                    count++;
+                    document.getElementById('nodes-visited').innerText = count;
+                    if (count % config.batch === 0 && config.delay > 0) await visualDelay(config.delay);
+                }
+
+                if (graph[current]) {
+                    for (let neighbor of graph[current].neighbors) {
+                        let alt = distances[current] + neighbor.weight;
+                        if (alt < distances[neighbor.node]) {
+                            distances[neighbor.node] = alt;
+                            cameFrom[neighbor.node] = current;
+                            pq.enqueue(neighbor.node, alt);
+                        }
+                    }
+                }
+            }
+            clearInterval(timerInterval);
+            return false;
+        }
+
+        async function runAStar(start, end) {
+            let pq = new PriorityQueue();
+            let gScore = {}, fScore = {}, cameFrom = {};
+            let visited = new Set();
+
+            for(let node in graph) { gScore[node] = Infinity; fScore[node] = Infinity; }
+            gScore[start] = 0;
+            fScore[start] = heuristic(graph[start], graph[end]);
+            pq.enqueue(start, fScore[start]);
+            let count = 0;
+
+            while (!pq.isEmpty()) {
+                const config = getSpeedConfig();
+
+                let currentObj = pq.dequeue();
+                let current = currentObj.val;
+
+                if (current == end) {
+                    await reconstructPath(cameFrom, end);
+                    clearInterval(timerInterval);
+                    return true;
+                }
+
+                if (current !== start && !visited.has(current)) {
+                    visited.add(current);
+                    drawSearchNode(current);
+                    count++;
+                    document.getElementById('nodes-visited').innerText = count;
+                    if (count % config.batch === 0 && config.delay > 0) await visualDelay(config.delay);
+                }
+
+                if (graph[current]) {
+                    for (let neighbor of graph[current].neighbors) {
+                        let tentative = gScore[current] + neighbor.weight;
+                        if (tentative < gScore[neighbor.node]) {
+                            cameFrom[neighbor.node] = current;
+                            gScore[neighbor.node] = tentative;
+                            fScore[neighbor.node] = tentative + heuristic(graph[neighbor.node], graph[end]);
+                            pq.enqueue(neighbor.node, fScore[neighbor.node]);
+                        }
+                    }
+                }
+            }
+            clearInterval(timerInterval);
+            return false;
+        }
+
+        // --- Helpers ---
+
+        function getDistance(nodeA, nodeB) {
+            const R = 6371e3; 
+            const φ1 = nodeA.lat * Math.PI/180, φ2 = nodeB.lat * Math.PI/180;
+            const Δφ = (nodeB.lat-nodeA.lat) * Math.PI/180, Δλ = (nodeB.lng-nodeA.lng) * Math.PI/180;
+            const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+        function heuristic(a, b) { return getDistance(a, b); }
+
+        // --- Drawing ---
+
+        function drawSearchNode(nodeId) {
+            const node = graph[nodeId];
+            L.circleMarker([node.lat, node.lng], {
+                radius: 4,
+                fillColor: "#fbbf24", color: "#d97706", weight: 1, opacity: 0.6, fillOpacity: 0.6
+            }).addTo(searchLayer);
+        }
+
+        async function reconstructPath(cameFrom, current) {
+            let path = [current];
+            let totalDist = 0;
+            while (cameFrom[current]) {
+                let prev = cameFrom[current];
+                totalDist += getDistance(graph[current], graph[prev]);
+                current = prev;
+                path.push(current);
+            }
+            
+            const latlngs = path.map(id => [graph[id].lat, graph[id].lng]);
+            L.polyline(latlngs, { color: '#2563eb', weight: 6, opacity: 0.9 }).addTo(pathLayer);
+            
+            latlngs.forEach(ll => {
+                 L.circleMarker(ll, { radius: 3, fillColor: "#2563eb", color: "white", weight: 1, fillOpacity: 1 }).addTo(pathLayer);
+            });
+
+            document.getElementById('path-length').innerText = (totalDist / 1000).toFixed(2) + " km";
+            document.getElementById('path-nodes-count').innerText = path.length;
+        }
+
+        function clearMap(keepMarkers = false) {
+            searchLayer.clearLayers();
+            pathLayer.clearLayers();
+            document.getElementById('nodes-visited').innerText = "0";
+            document.getElementById('path-length').innerText = "0.00 km";
+            document.getElementById('path-nodes-count').innerText = "0";
+            document.getElementById('timer-display').innerText = "00:00.00";
+            clearInterval(timerInterval);
+            totalPauseTime = 0;
+            isPaused = false;
+        }
+
+        function setLoading(active, text) {
+            const el = document.getElementById('status-container');
+            const txt = document.getElementById('status-text');
+            const spinner = document.getElementById('loading-spinner');
+            if (active) { el.classList.remove('hidden'); txt.innerText = text; spinner.style.display = 'block'; }
+            else { el.classList.add('hidden'); }
+        }
+    </script>
+</body>
+</html>

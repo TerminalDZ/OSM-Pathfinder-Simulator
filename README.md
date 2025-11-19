@@ -38,7 +38,8 @@ This project is fully **client-side** and requires no package installation (No `
 
 1.  **Clone** the repository or download the source code.
     ```bash
-    git clone https://github.com/terminaldz/OSM-Pathfinder-Simulator.git    ```
+    git clone https://github.com/terminaldz/OSM-Pathfinder-Simulator.git
+      ```
 2.  Open the `index.html` file directly in any modern web browser (Chrome, Firefox, Edge).
 3.  Enjoy the simulation!
 
